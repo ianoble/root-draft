@@ -1,0 +1,8 @@
+node_modules
+dist
+.vercel
+.DS_Store
+*.local
+
+# Engine copy cloned by the Vercel build (local dev uses a sibling checkout)
+/noble-bg-engine
