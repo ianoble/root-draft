@@ -29,7 +29,9 @@ const router = useRouter();
 const { state, isConnected, reconnecting, connect, disconnect, move } = useGame<RootDraftState>();
 
 /** The synced game state; null until the first update arrives. */
-const G = computed(() => (state.value?.draft ? state.value : null));
+const G = computed(() => (state.value?.draft && state.value.claimed ? state.value : null));
+/** State from a server running older draft logic (no names, codes or seats); the page can't use it. */
+const outdated = computed(() => !!state.value?.draft && !state.value.claimed);
 const draft = computed(() => G.value?.draft ?? null);
 
 const isHost = computed(() => props.playerID === HOST);
@@ -173,7 +175,16 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <p v-if="!G" class="turn">
+  <section v-if="outdated" class="panel narrow">
+    <h2>This draft can't be opened</h2>
+    <p>
+      The game server is running an older version of the draft rules than this site. Redeploy the
+      server, then start a new draft.
+    </p>
+    <p class="row" style="margin-top: 12px"><RouterLink class="btn primary" to="/">Back to drafts</RouterLink></p>
+  </section>
+
+  <p v-else-if="!G" class="turn">
     {{ reconnecting || !isConnected ? 'Connecting to the draft...' : 'Loading draft...' }}
   </p>
 
