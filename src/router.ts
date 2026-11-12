@@ -6,7 +6,8 @@ export const router = createRouter({
   routes: [
     { path: '/', name: 'lobby', component: LobbyView },
     { path: '/factions', name: 'browse', component: () => import('./views/BrowseView.vue') },
-    { path: '/join/:matchID', name: 'join', component: () => import('./views/JoinView.vue'), props: true },
+    // Old invite links: players now enter a code in the lobby.
+    { path: '/join/:matchID', redirect: '/' },
     { path: '/game/:matchID/:playerID', name: 'game', component: () => import('./views/GameView.vue'), props: true },
     { path: '/:rest(.*)*', redirect: '/' },
   ],

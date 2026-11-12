@@ -105,3 +105,12 @@ footer{margin-top:28px;font-size:12px;color:var(--muted)}
 /* Engine toasts (move refusals) are styled for a dark page; give them a solid surface here. */
 body .toast-container .toast{background:var(--panel);border:1px solid var(--line);color:var(--ink);backdrop-filter:none;box-shadow:var(--shadow)}
 body .toast-container .toast.error{border-color:var(--bad);color:var(--bad)}
+.names{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.name-row{display:flex;align-items:center;gap:8px}
+.name-row span{font-size:12px;color:var(--muted);width:68px;flex:none}
+.codes{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.codes li{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:7px 9px;border:1px solid var(--line);border-radius:9px;font-size:14px}
+.codes li .n{font-weight:700}
+.codes li code{font:700 14px ui-monospace,Menlo,Consolas,monospace;letter-spacing:.06em;margin-left:auto}
+.codes li .st{font-size:12px;font-weight:700}
+input.code-input{font:700 18px ui-monospace,Menlo,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase}

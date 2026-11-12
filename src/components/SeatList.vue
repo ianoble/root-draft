@@ -4,10 +4,11 @@ import { FACTION_BY_ID, currentSeat, pickOfSeat, type DraftState } from '../logi
 import FactionDot from './FactionDot.vue';
 
 export interface SeatPlayer {
-  /** Display name, or null while the seat is open. */
-  name: string | null;
+  name: string;
   you: boolean;
   host: boolean;
+  /** Whether the player has entered their code. */
+  joined: boolean;
 }
 
 /** `players` is in turn order, one entry per seat. */
@@ -20,16 +21,16 @@ const seats = computed(() =>
     return { seat, player, faction: id ? FACTION_BY_ID[id] : undefined };
   }),
 );
+const tags = (p: SeatPlayer) =>
+  [p.you && 'you', p.host && 'host', !p.joined && 'not joined yet'].filter(Boolean).join(', ');
 </script>
 
 <template>
   <ul class="seats">
     <li v-for="s in seats" :key="s.seat" :class="{ now: s.seat === now }">
-      <span class="n" :class="{ open: !s.player.name }">
-        {{ s.seat + 1 }}. {{ s.player.name ?? 'Open seat' }}
-        <small v-if="s.player.you || s.player.host">
-          ({{ [s.player.you && 'you', s.player.host && 'host'].filter(Boolean).join(', ') }})
-        </small>
+      <span class="n" :class="{ open: !s.player.joined }">
+        {{ s.seat + 1 }}. {{ s.player.name }}
+        <small v-if="tags(s.player)">({{ tags(s.player) }})</small>
       </span>
       <span class="p">
         <template v-if="s.faction">

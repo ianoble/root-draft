@@ -9,41 +9,59 @@ import {
   HOST,
   checkMove,
   gameDef,
+  namesFrom,
+  normalizeCode,
+  parseCode,
   pickerOf,
+  playerCode,
   seatOfPlayer,
   settingsFrom,
+  stripSecretInfo,
   type DraftSetupData,
   type RootDraftState,
 } from './game';
 
 const ALL = FACTIONS.map((f) => f.id);
 const game = { ...prepareGame(gameDef), seed: 'root-draft-test' };
+const NAMES = ['Ian', 'Bea', 'Cal', 'Dee', 'Eli', 'Fay'];
 
-function setupG(numPlayers: number, setupData?: DraftSetupData): RootDraftState {
-  return InitializeGame({ game, numPlayers, setupData }).G as RootDraftState;
+function setupData(numPlayers: number, over: DraftSetupData = {}): DraftSetupData {
+  return { room: 'TQ4M', names: NAMES.slice(0, numPlayers), ...over };
+}
+function setupG(numPlayers: number, over: DraftSetupData = {}): RootDraftState {
+  return InitializeGame({ game, numPlayers, setupData: setupData(numPlayers, over) }).G as RootDraftState;
 }
 
 let matches = 0;
+// The in-memory master creates each match without setupData, so skip the setup check there
+// (validateSetupData has its own tests below).
+const liveGame = { ...game, validateSetupData: undefined };
 
-/** One connected client per seat, all talking to the same in-memory master, like a real match. */
-function table(numPlayers = 4) {
+/**
+ * One connected client per seat, all talking to the same in-memory master, like a real match.
+ * Every guest enters their code unless `seated` is false.
+ */
+function table(numPlayers = 4, seated = true) {
   const multiplayer = Local();
   // boardgame.io reuses one in-memory master per game object, so each table needs its own match.
   const matchID = 'match-' + ++matches;
   const clients = Array.from({ length: numPlayers }, (_, i) => {
-    const c = Client({ game, numPlayers, multiplayer, playerID: String(i), matchID });
+    const c = Client({ game: liveGame, numPlayers, multiplayer, playerID: String(i), matchID });
     c.start();
     return c;
   });
-  const G = () => clients[0].getState()!.G as RootDraftState;
-  /** Send a move as a player; true if the match accepted it. */
+  const view = (playerID: string) => clients[Number(playerID)].getState()!.G as RootDraftState;
+  const G = () => view(HOST);
+  /** Send a move as a player; true if the host's view of the match changed. */
   const act = (playerID: string, name: string, ...args: unknown[]) => {
     const before = JSON.stringify(G());
     (clients[Number(playerID)].moves[name] as (...a: unknown[]) => void)(...args);
     return JSON.stringify(G()) !== before;
   };
+  const secret = (playerID: string) => G().secrets[playerID];
+  if (seated) for (let i = 1; i < numPlayers; i++) act(String(i), 'claim', secret(String(i)));
   const other = (...not: (string | null)[]) => String([0, 1, 2, 3, 4, 5].find((i) => !not.includes(String(i))));
-  return { clients, G, act, other };
+  return { clients, view, G, act, secret, other };
 }
 
 describe('definition', () => {
@@ -72,33 +90,66 @@ describe('settingsFrom', () => {
   });
 });
 
+describe('names and codes', () => {
+  it('cleans names and fills gaps', () => {
+    expect(namesFrom({ names: ['  Ian ', '', 7, 'x'.repeat(30)] }, 4)).toEqual(['Ian', 'Player 2', 'Player 3', 'x'.repeat(20)]);
+    expect(namesFrom(undefined, 2)).toEqual(['Player 1', 'Player 2']);
+  });
+
+  it('reads codes however they are typed', () => {
+    expect(normalizeCode(' tq4m-2k7qf ')).toBe('TQ4M2K7QF');
+    expect(parseCode('tq4m 2k7qf')).toEqual({ room: 'TQ4M', playerID: '2', secret: 'K7QF' });
+    expect(parseCode('TQ4M-0K7QF')).toBeNull(); // the host has no code
+    expect(parseCode('TQ4M-9K7QF')).toBeNull();
+    expect(parseCode('TQ4M-2K7Q')).toBeNull();
+    expect(parseCode('')).toBeNull();
+  });
+
+  it('builds each guest a code that parses back to their seat', () => {
+    const G = setupG(4);
+    expect(playerCode(G, HOST)).toBeNull();
+    for (const id of ['1', '2', '3']) {
+      const code = playerCode(G, id)!;
+      expect(code).toMatch(/^TQ4M-[123][A-Z2-9]{4}$/);
+      expect(parseCode(code)).toEqual({ room: 'TQ4M', playerID: id, secret: G.secrets[id] });
+    }
+  });
+});
+
 describe('validateSetupData', () => {
   const validate = (data: unknown, n: number) => gameDef.game.validateSetupData!(data, n);
 
-  it('accepts the defaults and a workable custom pool', () => {
-    expect(validate(undefined, 4)).toBeUndefined();
-    expect(validate({ pool: ['m', 'e', 'd', 'a', 'v'] }, 4)).toBeUndefined();
+  it('accepts a full roster with the default or a workable pool', () => {
+    expect(validate(setupData(4), 4)).toBeUndefined();
+    expect(validate(setupData(4, { pool: ['m', 'e', 'd', 'a', 'v'] }), 4)).toBeUndefined();
+  });
+
+  it('needs a room code and a name per seat', () => {
+    expect(validate(undefined, 4)).toMatch(/room code/);
+    expect(validate({ room: 'TQ4M', names: ['a', 'b'] }, 4)).toMatch(/name for each of the 4/);
   });
 
   it('rejects pools that cannot seat the table or reach the target', () => {
-    expect(validate({ pool: ['m', 'e'] }, 4)).toMatch(/cannot seat 4 players/);
-    expect(validate({ pool: ['a', 'c', 'l', 't', 'r'] }, 4)).toMatch(/below the 21\+ target/);
-    expect(validate({ pool: [] }, 2)).toMatch(/cannot seat/);
+    expect(validate(setupData(4, { pool: ['m', 'e'] }), 4)).toMatch(/cannot seat 4 players/);
+    expect(validate(setupData(4, { pool: ['a', 'c', 'l', 't', 'r'] }), 4)).toMatch(/below the 21\+ target/);
   });
 
   it('rejects a dealt draft whose every hand breaks a rule', () => {
-    // Exactly players + 1 factions including both the Vagabond and the Knaves: every deal is illegal.
-    expect(validate({ mode: 'dealt', pool: ['m', 'e', 'd', 'v', 'n'] }, 4)).toMatch(/No dealt hand/);
-    expect(validate({ mode: 'dealt', pool: ['m', 'e', 'd', 'v', 'n', 'a'] }, 4)).toBeUndefined();
+    expect(validate(setupData(4, { mode: 'dealt', pool: ['m', 'e', 'd', 'v', 'n'] }), 4)).toMatch(/No dealt hand/);
+    expect(validate(setupData(4, { mode: 'dealt', pool: ['m', 'e', 'd', 'v', 'n', 'a'] }), 4)).toBeUndefined();
   });
 });
 
 describe('setup', () => {
-  it('shuffles every player into the turn order', () => {
+  it('seats the roster, shuffles turn order and gives every guest a secret', () => {
     const G = setupG(5);
+    expect(G.names).toEqual(['Ian', 'Bea', 'Cal', 'Dee', 'Eli']);
+    expect(G.room).toBe('TQ4M');
     expect(G.turnOrder.slice().sort()).toEqual(['0', '1', '2', '3', '4']);
+    expect(Object.keys(G.secrets)).toEqual(['1', '2', '3', '4']);
+    expect(new Set(Object.values(G.secrets)).size).toBe(4);
+    expect(G.claimed).toEqual({ 0: true, 1: false, 2: false, 3: false, 4: false });
     expect(G.draft.players).toBe(5);
-    expect(G.draft.picks).toEqual([]);
     expect(G.locked).toBe(false);
   });
 
@@ -122,9 +173,27 @@ describe('setup', () => {
   });
 });
 
+describe('secrets', () => {
+  it('are visible to the host only', () => {
+    const G = setupG(3);
+    expect(stripSecretInfo(G, HOST).secrets).toEqual(G.secrets);
+    expect(stripSecretInfo(G, '1').secrets).toEqual({});
+    expect(stripSecretInfo(G, null).secrets).toEqual({});
+  });
+
+  it('never reach other players over the wire, even after codes are entered', () => {
+    const t = table(3);
+    for (const id of ['1', '2']) {
+      expect(t.view(id).secrets).toEqual({});
+      expect(JSON.stringify(t.view(id))).not.toContain(t.secret('2'));
+    }
+    expect(Object.keys(t.G().secrets)).toEqual(['1', '2']);
+  });
+});
+
 describe('checkMove', () => {
   it('explains refusals', () => {
-    const G = setupG(4);
+    const G = { ...setupG(4), claimed: { 0: true, 1: true, 2: true, 3: true } };
     const picker = pickerOf(G)!;
     const bystander = ['1', '2', '3'].find((p) => p !== picker)!;
     expect(checkMove(G, picker, 'pick', ['m'])).toBe(true);
@@ -137,9 +206,41 @@ describe('checkMove', () => {
     expect(checkMove(G, HOST, 'lock', [])).toMatch(/Every seat must pick/);
     expect(checkMove(G, HOST, 'dance', [])).toMatch(/Unknown move/);
   });
+
+  it('checks codes on the server and defers to it on clients', () => {
+    const G = setupG(3);
+    expect(checkMove(G, '1', 'claim', [G.secrets['1']])).toBe(true);
+    expect(checkMove(G, '1', 'claim', [G.secrets['1'].toLowerCase()])).toBe(true);
+    expect(checkMove(G, '1', 'claim', [G.secrets['2']])).toBe('That code does not match this seat');
+    expect(checkMove(G, HOST, 'claim', ['ABCD'])).toBe('The host is already seated');
+    // A guest's own view has no secrets, so their client sends the claim and the server decides.
+    expect(checkMove(stripSecretInfo(G, '1'), '1', 'claim', ['ZZZZ'])).toBe(true);
+  });
 });
 
 describe('a live match', () => {
+  it('seats a guest only with the right code', () => {
+    const t = table(3, false);
+    expect(t.act('1', 'claim', 'ZZZZ')).toBe(false);
+    expect(t.act('1', 'claim', t.secret('2'))).toBe(false);
+    expect(t.G().claimed['1']).toBe(false);
+    expect(t.act('1', 'claim', t.secret('1'))).toBe(true);
+    expect(t.G().claimed).toEqual({ 0: true, 1: true, 2: false });
+    // Other players see the claim, but not the code that was typed.
+    expect(t.view('2').claimed['1']).toBe(true);
+    expect(JSON.stringify(t.view('2'))).not.toContain(t.secret('1'));
+  });
+
+  it('does not let a guest pick before entering their code', () => {
+    const t = table(4, false);
+    const picker = pickerOf(t.G())!;
+    if (picker !== HOST) {
+      expect(t.act(picker, 'pick', 'm')).toBe(false);
+      t.act(picker, 'claim', t.secret(picker));
+    }
+    expect(t.act(picker, 'pick', 'm')).toBe(true);
+  });
+
   it('lets only the seat that is up pick', () => {
     const t = table();
     const picker = pickerOf(t.G())!;
@@ -147,7 +248,6 @@ describe('a live match', () => {
     expect(t.act(bystander, 'pick', 'm')).toBe(false);
     expect(t.act(picker, 'pick', 'm')).toBe(true);
     expect(t.G().draft.picks).toEqual(['m']);
-    // The same seat cannot pick twice.
     if (picker !== HOST) expect(t.act(picker, 'pick', 'e')).toBe(false);
   });
 
@@ -157,8 +257,8 @@ describe('a live match', () => {
     for (const c of t.clients) expect((c.getState()!.G as RootDraftState).draft.picks).toEqual(['d']);
   });
 
-  it('lets the host pick for whoever is up', () => {
-    const t = table();
+  it('lets the host pick for whoever is up, seated or not', () => {
+    const t = table(4, false);
     expect(t.act(HOST, 'pick', 'm')).toBe(true);
     expect(t.act(HOST, 'pick', 'e')).toBe(true);
     expect(t.G().draft.picks).toEqual(['m', 'e']);
@@ -214,7 +314,6 @@ describe('a live match', () => {
     expect(t.act(t.other(HOST), 'lock')).toBe(false);
     expect(t.act(HOST, 'lock')).toBe(true);
     expect(t.clients[1].getState()!.ctx.gameover).toEqual({ locked: true });
-    // Nothing changes after the lock.
     expect(t.act(HOST, 'undo')).toBe(false);
     expect(t.G().draft.picks).toEqual(picks);
   });
@@ -227,8 +326,8 @@ describe('a live match', () => {
   });
 
   it('records moves in the engine history', () => {
-    const t = table();
+    const t = table(2);
     t.act(HOST, 'pick', 'm');
-    expect(t.G().history).toMatchObject([{ moveName: 'pick', args: ['m'], playerID: HOST }]);
+    expect(t.G().history.at(-1)).toMatchObject({ moveName: 'pick', args: ['m'], playerID: HOST });
   });
 });

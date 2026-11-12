@@ -23,10 +23,8 @@ The client talks to the game server at `VITE_SERVER_URL` (default `http://localh
 The server has to be built with this game included. From `noble-bg-engine`:
 
 ```bash
-# PowerShell: $env:EXTERNAL_GAMES_CONFIG = '[{"slug":"root-draft","path":"C:/code/root-draft/src/logic/index.ts"}]'
-export EXTERNAL_GAMES_CONFIG='[{"slug":"root-draft","path":"/abs/path/to/root-draft/src/logic/index.ts"}]'
-npm run build -w packages/engine
-npm run build -w packages/server
+# Builds every game in noble-bg-engine/external-games.json; ROOT_DRAFT_PATH points at this checkout.
+ROOT_DRAFT_PATH=/abs/path/to/root-draft npm run build -w packages/server
 npm start -w packages/server
 ```
 
@@ -34,12 +32,18 @@ Without `DATABASE_URL` the server keeps matches in memory and sign-in accepts an
 
 ## How a draft works
 
-- The host signs in, chooses the settings and pool, and creates the draft. The settings travel
-  as boardgame.io `setupData`; the server rejects impossible ones with the same check the form uses.
-- The host holds seat `0`. Other players open the invite link (`/join/:matchID`), sign in and
-  take the next open seat. Turn order is shuffled when the match is created.
-- Each seat picks when it is up. The host can also pick for whoever is up, undo the last pick,
-  restart (re-dealing a dealt hand), and lock the finished lineup, which ends the match.
+- The host signs in, enters every player's name (their own first), chooses the settings and
+  pool, and creates the draft. The settings and names travel as boardgame.io `setupData`, with
+  a short room code; the server rejects impossible setups with the same check the form uses.
+- Player *i* in the host's list holds boardgame.io seat *i*; the host is seat `0`. The server
+  generates a secret for every other seat. Only the host's view of the game contains them
+  (`stripSecretInfo`), so the host sees each player's code, e.g. `TQ4M-2K7QF`: room, seat, secret.
+- A player signs in and enters their code (or opens `/?code=...`). The app finds the draft by
+  room code, takes that seat, and confirms it with a `claim` move that only the server can check.
+  A player cannot pick until their code is confirmed.
+- Turn order is shuffled when the draft is created. Each player picks when their seat is up; the
+  host can also pick for whoever is up, undo the last pick, restart (re-dealing a dealt hand) and
+  lock the finished lineup, which ends the match.
 - Everyone sees picks live over the engine's Socket.IO connection.
 
 ## Layout
@@ -49,8 +53,8 @@ Without `DATABASE_URL` the server keeps matches in memory and sign-in accepts an
 - `src/logic/draft.ts`: pure draft rules (reach, validity, guard, dealing). No framework imports.
 - `src/logic/game.ts`: the boardgame.io game and `defineGame` wrapper around those rules.
   `src/logic/index.ts` is the entry the server bundles, so keep its imports server-safe.
-- `src/lib/api.ts`: lobby API calls (create, join, leave, list).
-- `src/views/`: lobby, join link, draft room, faction browser.
+- `src/lib/api.ts`: lobby API calls (create a draft, join with a code, leave, list).
+- `src/views/`: lobby (start a draft, join with a code), draft room, faction browser.
 - `src/components/`: faction cards and detail sheet, reach meter, seat list, setup form, sign-in.
 
 ## Tests

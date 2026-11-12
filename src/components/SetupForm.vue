@@ -2,6 +2,8 @@
 import { computed, reactive } from "vue";
 import { EXPANSIONS, FACTIONS, REACH_TARGETS, type Expansion } from "../data/factions";
 import {
+  MAX_NAME_LENGTH,
+  MAX_PLAYERS,
   maxReach,
   normalizePool,
   poolProblem,
@@ -15,8 +17,8 @@ import {
 import FactionDot from "./FactionDot.vue";
 import SegControl from "./SegControl.vue";
 
-defineProps<{ error?: string; busy?: boolean }>();
-const emit = defineEmits<{ start: [settings: DraftSettings] }>();
+const props = defineProps<{ error?: string; busy?: boolean; hostName?: string }>();
+const emit = defineEmits<{ start: [settings: DraftSettings, names: string[]] }>();
 
 const form = reactive({
   players: 4,
@@ -25,7 +27,15 @@ const form = reactive({
   goal: "recommended" as ReachGoal,
   order: "reverse" as PickOrder,
   off: {} as Record<string, boolean>,
+  /** Player names; the first is the host. */
+  names: Array.from({ length: MAX_PLAYERS }, (_, i) => (i === 0 ? props.hostName ?? "" : "")),
 });
+
+const names = computed(() => form.names.slice(0, form.players).map((n) => n.trim()));
+const missingNames = computed(() => names.value.some((n) => !n));
+const duplicateNames = computed(
+  () => new Set(names.value.map((n) => n.toLowerCase())).size !== names.value.length,
+);
 
 const settings = computed<DraftSettings>(() => ({
   players: form.players,
@@ -37,7 +47,15 @@ const settings = computed<DraftSettings>(() => ({
 }));
 const target = computed(() => targetOf(settings.value));
 const best = computed(() => maxReach([], settings.value.pool, form.players));
-const problem = computed(() => poolProblem(settings.value));
+const problem = computed(
+  () =>
+    poolProblem(settings.value) ??
+    (missingNames.value
+      ? "Enter a name for every player."
+      : duplicateNames.value
+        ? "Give every player a different name."
+        : null),
+);
 
 const expansions = computed(() =>
   EXPANSIONS.map((name) => {
@@ -53,7 +71,7 @@ function toggleExpansion(name: Expansion, allOff: boolean) {
 }
 
 function start() {
-  if (!problem.value) emit("start", settings.value);
+  if (!problem.value) emit("start", settings.value, names.value);
 }
 </script>
 
@@ -67,9 +85,22 @@ function start() {
           v-model="form.players"
           :options="[2, 3, 4, 5, 6].map((n) => ({ value: n, label: String(n) }))"
         />
+        <label class="f">Who is playing?</label>
+        <div class="names">
+          <div v-for="i in form.players" :key="i" class="name-row">
+            <span>{{ i === 1 ? "You (host)" : `Player ${i}` }}</span>
+            <input
+              v-model="form.names[i - 1]"
+              type="text"
+              :maxlength="MAX_NAME_LENGTH"
+              :placeholder="i === 1 ? 'Your name' : 'Name'"
+              :aria-label="i === 1 ? 'Your name' : `Player ${i} name`"
+            />
+          </div>
+        </div>
         <p class="hint">
-          You take the host seat and invite the others with a link. Turn order is shuffled when the
-          draft is created.
+          Each player gets a personal code to share with them. Turn order is shuffled when the draft
+          is created.
         </p>
         <label class="f">Draft style</label>
         <SegControl
