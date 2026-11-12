@@ -82,6 +82,13 @@ input[type=text],input[type=password]{font:inherit;color:inherit;background:var(
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:14px}
 .stats div{border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px;color:var(--muted)}
 .stats b{display:block;color:var(--ink);font-size:16px}
+.sheet .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0 22px}
+.points,.steps{margin:4px 0 0;padding:0;list-style:none;display:grid;gap:6px;font-size:15px}
+.points li{padding-left:16px;position:relative}
+.points li::before{content:"";position:absolute;left:0;top:.6em;width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.points.good li::before{background:var(--good)}
+.points.bad li::before{background:var(--warn)}
+.steps li{border-left:3px solid var(--line);padding:2px 0 2px 12px}
 .links{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 table.t{border-collapse:collapse;width:100%;font-size:14px}
 table.t td,table.t th{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left}

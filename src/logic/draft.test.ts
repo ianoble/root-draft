@@ -52,6 +52,15 @@ describe("faction data", () => {
     const reach = Object.fromEntries(FACTIONS.map((f) => [f.id, f.reach]));
     expect(reach).toEqual({ m: 10, e: 7, a: 3, v: 5, w: 2, r: 5, l: 2, d: 8, c: 3, h: 9, k: 8, f: 7, t: 4, n: 4 });
   });
+
+  it("gives every faction strengths, cautions and an opening", () => {
+    for (const f of FACTIONS) {
+      expect(f.goodAt.length, f.name).toBeGreaterThanOrEqual(2);
+      expect(f.watchOut.length, f.name).toBeGreaterThanOrEqual(2);
+      expect(f.firstTurns.length, f.name).toBeGreaterThanOrEqual(3);
+      for (const line of [...f.goodAt, ...f.watchOut, ...f.firstTurns]) expect(line.trim().length).toBeGreaterThan(20);
+    }
+  });
 });
 
 describe("targets and reach sums", () => {

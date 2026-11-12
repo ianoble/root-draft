@@ -37,6 +37,25 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKey));
         <p>{{ faction.lore }}</p>
         <h4>How it plays</h4>
         <p>{{ faction.plays }}</p>
+        <div class="cols">
+          <div>
+            <h4>Good at</h4>
+            <ul class="points good">
+              <li v-for="x in faction.goodAt" :key="x">{{ x }}</li>
+            </ul>
+          </div>
+          <div>
+            <h4>Watch out for</h4>
+            <ul class="points bad">
+              <li v-for="x in faction.watchOut" :key="x">{{ x }}</li>
+            </ul>
+          </div>
+        </div>
+        <h4>Your first turns</h4>
+        <ol class="steps">
+          <li v-for="x in faction.firstTurns" :key="x">{{ x }}</li>
+        </ol>
+        <p class="hint">One sensible opening, not the only one. Adapt it to the map and your neighbours.</p>
         <h4>At the table</h4>
         <p>{{ faction.tip }}</p>
         <p v-if="faction.homeland" class="hint">
